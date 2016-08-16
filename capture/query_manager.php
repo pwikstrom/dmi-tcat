@@ -1,12 +1,13 @@
 <?php
 
-include_once("../config.php");
+include_once __DIR__ . '/../config.php';
+include_once __DIR__ . '/../common/constants.php';
 
 if (defined(ADMIN_USER) && ADMIN_USER != "" && (!isset($_SERVER['PHP_AUTH_USER']) || $_SERVER['PHP_AUTH_USER'] != ADMIN_USER))
     die("Go away, you evil hacker!");
 
-include_once("../common/functions.php");
-include_once("../capture/common/functions.php");
+include_once __DIR__ . '/../common/functions.php';
+include_once __DIR__ . '/../capture/common/functions.php';
 
 $captureroles = unserialize(CAPTUREROLES);
 $now = strftime("%Y-%m-%d %H:%M:00", date('U') + 60); // controller only called each minute
@@ -15,6 +16,10 @@ if (isset($_POST) && isset($_POST['action'])) {
     $action = $_POST["action"];
 
     switch ($action) {
+        case "autoupgrade":
+            tcat_autoupgrade();
+            echo '{"msg":"We are now running auto upgrade in the background. Please have patience or watch the logs/controller.log file on your server for progress indications."}';
+            break;
         case "newbin":
             create_new_bin($_POST);
             break;
@@ -26,6 +31,8 @@ if (isset($_POST) && isset($_POST['action'])) {
             break;
         case "removebin":
             remove_bin($_POST);
+        case "renamebin":
+            rename_bin($_POST);
         default:
             break;
     }
@@ -117,23 +124,13 @@ function create_new_bin($params) {
         $users = explode(",", $params["newbin_users"]);
         $users = array_trim_and_unique($users);
 
-        // populate the phrases and connector tables
         foreach ($users as $user) {
-            $sql = "SELECT distinct(id) FROM tcat_query_users WHERE id = :user_id";
-            $check_phrase = $dbh->prepare($sql);
-            $check_phrase->bindParam(":user_id", $user, PDO::PARAM_INT);
-            $check_phrase->execute();
-            if ($check_phrase->rowCount() > 0) {
-                $results = $check_phrase->fetch();
-                $inid = $results['id'];
-            } else {
-                $sql = "INSERT INTO tcat_query_users (id) VALUES (:user_id)";
-                $insert_phrase = $dbh->prepare($sql);
-                $insert_phrase->bindParam(":user_id", $user, PDO::PARAM_INT);
-                $insert_phrase->execute();
-                $inid = $dbh->lastInsertId();
-            }
-            $sql = "INSERT INTO tcat_query_bins_users (user_id,querybin_id,starttime,endtime) VALUES ('" . $inid . "','" . $lastbinid . "','$now','0000-00-00 00:00:00')";
+            // populate the users and connector tables
+            $sql = "INSERT IGNORE INTO tcat_query_users (id) VALUES (:user_id)";
+            $insert_phrase = $dbh->prepare($sql);
+            $insert_phrase->bindParam(":user_id", $user, PDO::PARAM_INT);
+            $insert_phrase->execute();      // the user id can already exist here, but this 'error' will be ignored
+            $sql = "INSERT INTO tcat_query_bins_users (user_id,querybin_id,starttime,endtime) VALUES ('" . $user . "','" . $lastbinid . "','$now','0000-00-00 00:00:00')";
             $insert_connect = $dbh->prepare($sql);
             $insert_connect->execute();
         }
@@ -186,42 +183,27 @@ function remove_bin($params) {
     $delete_querybin_periods->bindParam(':id', $bin_id, PDO::PARAM_INT);
     $delete_querybin_periods->execute();
 
+    // delete phrase references associated with the query bin
+    $sql = "DELETE FROM tcat_query_bins_phrases WHERE querybin_id = :id";
+    $delete_query_bins_phrases = $dbh->prepare($sql);
+    $delete_query_bins_phrases->bindParam(":id", $bin_id, PDO::PARAM_INT);
+    $delete_query_bins_phrases->execute();
 
-    if ($type == "track" || $type == "geotrack") { // delete phrases
-        $sql = "SELECT phrase_id FROM tcat_query_bins_phrases WHERE querybin_id = :id";
-        $select_query_bins_phrases = $dbh->prepare($sql);
-        $select_query_bins_phrases->bindParam(":id", $bin_id, PDO::PARAM_INT);
-        $select_query_bins_phrases->execute();
-        if ($select_query_bins_phrases->rowCount() > 0) {
-            while ($results = $select_query_bins_phrases->fetch()) {
-                $sql = "DELETE FROM tcat_query_phrases WHERE id = :phrase_id";
-                $delete_query_phrases = $dbh->prepare($sql);
-                $delete_query_phrases->bindParam(":phrase_id", $results['phrase_id'], PDO::PARAM_INT);
-                $delete_query_phrases->execute();
-            }
-            $sql = "DELETE FROM tcat_query_bins_phrases WHERE querybin_id = :id";
-            $delete_query_bins_phrases = $dbh->prepare($sql);
-            $delete_query_bins_phrases->bindParam(":id", $bin_id, PDO::PARAM_INT);
-            $delete_query_bins_phrases->execute();
-        }
-    } elseif ($type == "follow") { // delete users
-        $sql = "SELECT user_id FROM tcat_query_bins_users WHERE querybin_id = :id";
-        $select_query_bins_users = $dbh->prepare($sql);
-        $select_query_bins_users->bindParam(":id", $bin_id, PDO::PARAM_INT);
-        $select_query_bins_users->execute();
-        if ($select_query_bins_users->rowCount() > 0) {
-            while ($results = $select_query_bins_users->fetch()) {
-                $sql = "DELETE FROM tcat_query_users WHERE id = :user_id";
-                $delete_query_users = $dbh->prepare($sql);
-                $delete_query_users->bindParam(":user_id", $results['user_id'], PDO::PARAM_INT);
-                $delete_query_users->execute();
-            }
-            $sql = "DELETE FROM tcat_query_bins_users WHERE querybin_id = :id";
-            $delete_query_bins_users = $dbh->prepare($sql);
-            $delete_query_bins_users->bindParam(":id", $bin_id, PDO::PARAM_INT);
-            $delete_query_bins_users->execute();
-        }
-    }
+    // delete orphaned phrases
+    $sql = "DELETE FROM tcat_query_phrases where id not in ( select phrase_id from tcat_query_bins_phrases )";
+    $delete_query_phrases = $dbh->prepare($sql);
+    $delete_query_phrases->execute();
+
+    // delete user references associated with the query bin
+    $sql = "DELETE FROM tcat_query_bins_users WHERE querybin_id = :id";
+    $delete_query_bins_users = $dbh->prepare($sql);
+    $delete_query_bins_users->bindParam(":id", $bin_id, PDO::PARAM_INT);
+    $delete_query_bins_users->execute();
+
+    // delete orphaned users
+    $sql = "DELETE FROM tcat_query_users where id not in ( select user_id from tcat_query_bins_users )";
+    $delete_query_users = $dbh->prepare($sql);
+    $delete_query_users->execute();
 
     $sql = "DROP TABLE " . $bin_name . "_tweets";
     $delete_table = $dbh->prepare($sql);
@@ -367,6 +349,66 @@ function pause_bin($params) {
     } else {
         echo '{"msg":"Your query bin has been set as ' . $params["todo"] . 'ed but the ' . $type . ' script could NOT be restarted"}';
     }
+    $dbh = false;
+}
+
+function rename_bin($params) {
+    $dbh = pdo_connect();
+
+    if (!table_id_exists($params["bin"])) {
+        echo '{"msg":"The query bin could not be found"}';
+        return false;
+    }
+
+    if (!array_key_exists('newname', $params) || !is_string($params['newname']) || strlen($params['newname']) < 1 || strlen($params['newname'] > 45) ||
+        preg_match("/[ `;'\"\(\)]/", $params['newname'])) {
+        echo '{"msg":"Illegal query bin name"}';
+        return false;
+    }
+
+    if (queryManagerBinExists($params['newname'])) {
+        echo '{"msg":"The new name for the query bin is already in use"}';
+        return false;
+    }
+
+    $querybin_id = $params["bin"];
+    $newname = $params["newname"];
+
+    // get name of the old query_bin
+    $sql = "SELECT querybin FROM tcat_query_bins WHERE id = :bin_id";
+    $select_querybin = $dbh->prepare($sql);
+    $select_querybin->bindParam(':bin_id', $querybin_id, PDO::PARAM_INT);
+    $select_querybin->execute();
+    if ($select_querybin->rowCount() == 0) {
+        echo '{"msg":"The query bin with id [' . $querybin_id . '] cannot be found."}';
+        return;
+    }
+    $results = $select_querybin->fetch();
+    $oldname = $results['querybin'];
+
+    // change the name in the TCAT tables
+    $sql = "UPDATE tcat_query_bins SET querybin = :newname WHERE id = :querybin_id";
+    $modify_bin = $dbh->prepare($sql);
+    $modify_bin->bindParam(":newname", $newname, PDO::PARAM_STR);
+    $modify_bin->bindParam(":querybin_id", $querybin_id, PDO::PARAM_INT);
+    $modify_bin->execute();
+
+    // alter MySQL table names
+    $exts = array('tweets', 'mentions', 'urls', 'hashtags', 'withheld', 'places', 'media');
+    foreach ($exts as $ext) {
+        $oldfull = $oldname . '_' . $ext;
+        $newfull = $newname . '_' . $ext;
+        $sql = "ALTER TABLE `$oldfull` RENAME `$newfull`";
+        $modify_bin = $dbh->prepare($sql);
+        // table may not exist
+        try {
+            @$modify_bin->execute();
+        } catch (Exception $e) {
+            // ignore error
+        }
+    }
+
+    echo '{"msg":"Your query bin has been renamed to ' . $newname . '"}';
     $dbh = false;
 }
 
@@ -691,7 +733,6 @@ function getBins() {
             }
         } elseif ($bin->type == "follow" || $bin->type == "timeline") {
             $sql = "SELECT u.id AS user_id, bu.starttime AS user_starttime, bu.endtime AS user_endtime FROM tcat_query_users u, tcat_query_bins_users bu WHERE u.id = bu.user_id AND bu.querybin_id = " . $bin->id;
-            //$sql = "SELECT t.from_user_name AS user_name, u.id AS user_id, bu.starttime AS user_starttime, bu.endtime AS user_endtime FROM tcat_query_users u, tcat_query_bins_users bu, " . $bin->name . "_tweets t WHERE u.id = bu.user_id AND bu.querybin_id = " . $bin->id . " AND bu.user_id = t.from_user_id";
             $rec = $dbh->prepare($sql);
             $rec->execute();
             $user_results = $rec->fetchAll();
@@ -731,8 +772,9 @@ function getBins() {
 }
 
 function getLastRateLimitHit() {
+    // For now, we report only about rate limit hits from the last 48 hours on the analysis panel (issue #83)
     $dbh = pdo_connect();
-    $rec = $dbh->prepare("SELECT end FROM tcat_error_ratelimit ORDER BY end DESC LIMIT 1");
+    $rec = $dbh->prepare("SELECT end FROM tcat_error_ratelimit WHERE tweets > 0 and end > date_sub(now(), interval 2 day) ORDER BY end DESC LIMIT 1");
     if ($rec->execute() && $rec->rowCount() > 0) {
         $res = $rec->fetch();
         return $res['end'];

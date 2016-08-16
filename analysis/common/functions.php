@@ -5,15 +5,20 @@ $connection = false;
 db_connect($hostname, $dbuser, $dbpass, $database);
 
 // catch parameters
-if (isset($_GET['dataset']) && !empty($_GET['dataset']))
+if (isset($_GET['dataset']) && !empty($_GET['dataset'])) {
     $dataset = urldecode($_GET['dataset']);
-else {
+} else {
     $sql = "SELECT querybin FROM tcat_query_bins ORDER BY id LIMIT 1";
     $rec = mysql_query($sql);
-    if ($res = mysql_fetch_assoc($rec))
+    if ($res = mysql_fetch_assoc($rec)) {
         $dataset = $res['querybin'];
+    }
 }
 $datasets = get_all_datasets();
+if (count($datasets) == 0) {
+    $dataset = NULL;        // No query bins are available
+}
+
 if (isset($_GET['query']) && !empty($_GET['query']))
     $query = urldecode($_GET['query']);
 else
@@ -186,7 +191,7 @@ function frequencyTable($table, $toget) {
     $where = "t.id = $table.tweet_id AND ";
     $sql .= sqlSubset($where);
     $sql .= " GROUP BY toget, datepart ORDER BY datepart ASC, count DESC";
-    $rec = mysql_query($sql);
+    $rec = mysql_unbuffered_query($sql);
     $date = false;
     while ($res = mysql_fetch_assoc($rec)) {
         if ($res['count'] > $esc['shell']['minf']) {
@@ -199,6 +204,7 @@ function frequencyTable($table, $toget) {
             $results[$date][$res['toget']] = $res['count'];
         }
     }
+    mysql_free_result($rec);
     return $results;
 }
 
@@ -291,7 +297,16 @@ function sqlSubset($where = NULL) {
     }
 
     if (!empty($esc['mysql']['from_source'])) {
-        $sql .= "LOWER(t.source COLLATE $collation) LIKE LOWER('%" . $esc['mysql']['from_source'] . "%' COLLATE $collation) AND ";
+	if (strstr($esc['mysql']['from_source'], "OR") !== false) {
+            $subqueries = explode(" OR ", $esc['mysql']['from_source']);
+            $sql .= "(";
+            foreach ($subqueries as $subquery) {
+                $sql .= "LOWER(t.source COLLATE $collation) LIKE LOWER('%" . $subquery . "%' COLLATE $collation) OR ";
+            }
+            $sql = substr($sql, 0, -3) . ") AND ";
+        } else {
+            $sql .= "LOWER(t.source COLLATE $collation) LIKE LOWER('%" . $esc['mysql']['from_source'] . "%' COLLATE $collation) AND ";
+        }
     }
     if (!empty($esc['mysql']['exclude'])) {
         if (strstr($esc['mysql']['exclude'], "AND") !== false) {
@@ -378,7 +393,7 @@ function groupByInterval($date) {
 function generate($what, $filename) {
     global $tsv, $network, $esc, $titles, $database, $interval, $outputformat;
 
-    require_once("CSV.class.php");
+    require_once __DIR__ . '/CSV.class.php';
 
     // initialize variables
     $tweets = $times = $from_user_names = $results = $urls = $urls_expanded = $hosts = $hashtags = array();
@@ -611,6 +626,12 @@ function validate($what, $how) {
             if (!preg_match("/^\d{4}-\d{2}-\d{2}$/", $what)) // TODO, should never be more than 'now'
                 $what = "2011-11-15";
             break;
+        case "interval":
+            // if an unsupported interval is specified, fallback to daily
+            if (!in_array($what, array('hourly', 'daily', 'weekly', 'monthly', 'yearly', 'overall', 'custom'))) {
+                $what = "daily";
+            }
+            break;
         // escape shell cmd chars
         case "shell":
             $what = preg_replace("/[\/ ]/", "_", $what);
@@ -650,7 +671,7 @@ function decodeAndFlatten($text) {
 // make sure that we have all the right types and values
 // also make sure one cannot do a mysql injection attack
 function validate_all_variables() {
-    global $esc, $query, $url_query, $geo_query, $dataset, $exclude, $from_user_name, $from_source, $startdate, $enddate, $databases, $connection, $keywords, $database, $minf, $topu, $from_user_lang, $outputformat;
+    global $esc, $query, $url_query, $geo_query, $dataset, $exclude, $from_user_name, $from_source, $startdate, $enddate, $interval, $databases, $connection, $keywords, $database, $minf, $topu, $from_user_lang, $outputformat;
 
     $esc['mysql']['dataset'] = validate($dataset, "mysql");
     $esc['mysql']['query'] = validate($query, "mysql");
@@ -678,6 +699,7 @@ function validate_all_variables() {
 
     $esc['date']['startdate'] = validate($startdate, "startdate");
     $esc['date']['enddate'] = validate($enddate, "enddate");
+    $esc['date']['interval'] = validate($interval, "interval");
 
     if (preg_match("/^\d{4}-\d{2}-\d{2}$/", $esc['date']['startdate']))
         $esc['datetime']['startdate'] = $esc['date']['startdate'] . " 00:00:00";
@@ -695,6 +717,9 @@ function current_collation() {
     $collation = 'utf8_bin';
     $is_utf8mb4 = false;
     $sql = "SHOW FULL COLUMNS FROM " . $esc['mysql']['dataset'] . "_hashtags";
+	global $hostname, $dbuser, $dbpass, $database;
+	db_connect($hostname, $dbuser, $dbpass, $database);
+
     $sqlresults = mysql_query($sql);
     while ($res = mysql_fetch_assoc($sqlresults)) {
         if (array_key_exists('Collation', $res) && ($res['Collation'] == 'utf8mb4_unicode_ci' || $res['Collation'] == 'utf8mb4_general_ci')) {
@@ -710,6 +735,22 @@ function current_collation() {
         mysql_query("SET NAMES utf8");
     }
     return $collation;
+}
+
+// This function accesses the tcat_status table (if it exists) and retrieves the value for a variable
+function get_status($variable) {
+	global $esc, $hostname, $dbuser, $dbpass, $database;
+    $sql = "SELECT table_name FROM information_schema.tables WHERE table_schema = '$database' AND table_name = 'tcat_status'";
+	db_connect($hostname, $dbuser, $dbpass, $database);
+    $sqlresults = mysql_query($sql);
+    if (mysql_num_rows($sqlresults) > 0) {
+        $sql = "SELECT value FROM tcat_status WHERE variable = '" . mysql_real_escape_string($variable) . "'";
+        $sqlresults = mysql_query($sql);
+        if ($res = mysql_fetch_assoc($sqlresults)) {
+            return $res['value'];
+        }
+    }
+    return null;
 }
 
 // Output format: {dataset}-{startdate}-{enddate}-{query}-{exclude}-{from_user_name}-{from_user_lang}-{url_query}-{module_name}-{module_settings}-{hash}.{filetype}
@@ -780,8 +821,9 @@ function get_hash_tags($msg) {
 function get_all_datasets() {
     global $dataset;
     $dbh = pdo_connect();
-    $rec = $dbh->prepare("SELECT id, querybin, type, active, comments FROM tcat_query_bins WHERE visible = TRUE ORDER BY LOWER(querybin)");
+    $rec = $dbh->prepare("SELECT id, querybin, type, active, comments FROM tcat_query_bins WHERE access = " . TCAT_QUERYBIN_ACCESS_OK . " OR access = " . TCAT_QUERYBIN_ACCESS_READONLY . " ORDER BY LOWER(querybin)");
     $datasets = array();
+    try {
     if ($rec->execute() && $rec->rowCount() > 0) {
         while ($res = $rec->fetch()) {
             $row = array();
@@ -817,6 +859,16 @@ function get_all_datasets() {
             $datasets[$row['bin']] = $row;
         }
     }
+
+    } catch (PDOException $e) {
+        if ($e->errorInfo[0] == '42S02') {
+            // Base table or view not found
+            // Tables not yet created: just return empty $datasets
+        } else {
+            throw $e;
+        }
+    }
+
     return $datasets;
 }
 
@@ -1068,13 +1120,14 @@ function sentiment_avgs() {
     $sql .= sqlSubset("t.id = s.tweet_id AND ");
     $sql .= "GROUP BY datepart ORDER BY t.created_at";
 
-    $rec = mysql_query($sql);
+    $rec = mysql_unbuffered_query($sql);
     while ($res = mysql_fetch_assoc($rec)) {
         $neg = $res['neg'];
         $pos = $res['pos'];
         $avgs[$res['datepart']][0] = (float) $pos;
         $avgs[$res['datepart']][1] = (float) abs($neg);
     }
+    mysql_free_result($rec);
 
     // only subjective
     $sql = "SELECT avg(s.positive) as pos, avg(s.negative) as neg, ";
@@ -1087,13 +1140,14 @@ function sentiment_avgs() {
     $sql .= sqlSubset("t.id = s.tweet_id AND (s.positive != 1 AND s.negative != 1) AND ");
     $sql .= "GROUP BY datepart ORDER BY t.created_at";
 
-    $rec = mysql_query($sql);
+    $rec = mysql_unbuffered_query($sql);
     while ($res = mysql_fetch_assoc($rec)) {
         $neg = $res['neg'];
         $pos = $res['pos'];
         $avgs[$res['datepart']][2] = (float) $pos;
         $avgs[$res['datepart']][3] = (float) abs($neg);
     }
+    mysql_free_result($rec);
 
     // only dateparts
     $sql = "SELECT ";
@@ -1118,5 +1172,99 @@ function sentiment_avgs() {
 
     return $avgs;
 }
+
+// Check if $dataset is the name of an existing query bin in $datasets.
+//
+// If it exists, nothing happens.
+// If it does not exist, an error page is produced and execution stops.
+
+function dataset_must_exist() {
+  global $dataset;
+  global $datasets;
+
+  if (! isset($datasets[$dataset])) {
+    http_response_code(404);
+    header("Content-Type: text/plain");
+    echo "Error: unknown query bin: $dataset";
+    exit(0);
+  }
+}
+
+// Prepare for data export.
+//
+// The $filename is the suggested filename and the $outputformat
+// determines the MIME type.
+//
+// Depending on the DEFAULT_USE_CACHE_FILE or "cache" query parameter, it
+// will either:
+// - output CSV/TSV directly to the HTTP response; or
+// - saves CSV/TSV to cache file and the HTTP response is a HTML page
+//
+// The default mode can overwritten with cache=y or cache=n query param
+//
+// Returns the "file" that should be opened and the results written to.
+// This will either be the provided $filename or 'php://output'.
+//
+// Will also set the global $use_cache_file variable. If true, HTML output
+// should be produced to tell the user to download the cache file, otherwise
+// no HTML output should be produced.
+
+define('DEFAULT_USE_CACHE_FILE', false); // true=old; false=new behaviour
+
+function export_start($filename, $outputformat) {
+    global $default_use_cache_file;
+    global $use_cache_file;
+    global $resultsdir;
+
+    // Determine which mode to use
+
+    $use_cache_file = DEFAULT_USE_CACHE_FILE;
+
+    if (isset($_GET['cache'])) {
+    switch ($_GET['cache']) {
+        case 'n':
+            $use_cache_file = false;
+            break;
+	case 'y':
+	    $use_cache_file = true;
+	    break;
+	default:
+            die("Invalid query parameter: cache=" . $_GET['cache']);
+	}
+    }
+
+    // Determine the MIME type
+
+    switch ($outputformat) {
+    case 'csv':
+        $mimetype = 'text/csv; charset=utf-8';
+        break;
+    case 'tsv':
+        $mimetype = 'text/tab-separated-values; charset=utf-8';
+        break;
+    default:
+        $mimetype = 'application/octet-stream';
+        break;
+    }
+
+    // Use cache file or return results as an attachment
+
+    if ($use_cache_file) {
+        // Write data to cache file
+        return $filename;
+
+    } else {
+        // Write into HTTP response
+        $suggest = 'tcat_' . basename($filename);
+
+        header("Content-Type: $mimetype");
+        header("Content-Disposition: attachment; filename=\"$suggest\"");
+        header('Cache-Control: no-cache');
+        ob_clean();
+        flush();
+
+        return 'php://output';
+    }
+}    
 
 ?>

@@ -1,7 +1,7 @@
 <?php
-require_once './common/config.php';
-require_once './common/functions.php';
-require_once './common/CSV.class.php';
+require_once __DIR__ . '/common/config.php';
+require_once __DIR__ . '/common/functions.php';
+require_once __DIR__ . '/common/CSV.class.php';
 ?>
 
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
@@ -28,7 +28,7 @@ require_once './common/CSV.class.php';
         validate_all_variables();
         /* @todo, use same export possibilities as mod.export_tweets.php */
 
-        $header = "id,time,created_at,from_user_name,from_user_lang,text,source,location,lat,lng,from_user_tweetcount,from_user_followercount,from_user_friendcount,from_user_realname,to_user_name,in_reply_to_status_id,from_user_listed,from_user_utcoffset,from_user_timezone,from_user_description,from_user_url,from_user_verified,filter_leveli,cld_name,cld_code,cld_reliable,cld_bytes,cld_percent";
+        $header = "id,time,created_at,from_user_name,from_user_lang,text,source,location,lat,lng,from_user_tweetcount,from_user_followercount,from_user_friendcount,from_user_realname,to_user_name,in_reply_to_status_id,quoted_status_id,from_user_listed,from_user_utcoffset,from_user_timezone,from_user_description,from_user_url,from_user_verified,filter_leveli,cld_name,cld_code,cld_reliable,cld_bytes,cld_percent";
         if (isset($_GET['includeUrls']) && $_GET['includeUrls'] == 1)
             $header .= ",urls,urls_expanded,urls_followed,domains";
         $header .= "\n";
@@ -51,7 +51,7 @@ require_once './common/CSV.class.php';
                     $id = $data['id'];
                 $csv->addfield($id);
                 $csv->addfield(strtotime($data["created_at"]));
-                $fields = array( 'created_at', 'from_user_name', 'from_user_lang', 'text', 'source', 'location', 'geo_lat', 'geo_lng', 'from_user_tweetcount', 'from_user_followercount', 'from_user_friendcount', 'from_user_realname', 'to_user_name', 'in_reply_to_status_id', 'from_user_listed', 'from_user_utcoffset', 'from_user_timezone', 'from_user_description', 'from_user_url', 'from_user_verified', 'filter_level' );
+                $fields = array( 'created_at', 'from_user_name', 'from_user_lang', 'text', 'source', 'location', 'geo_lat', 'geo_lng', 'from_user_tweetcount', 'from_user_followercount', 'from_user_friendcount', 'from_user_realname', 'to_user_name', 'in_reply_to_status_id', 'quoted_status_id', 'from_user_listed', 'from_user_utcoffset', 'from_user_timezone', 'from_user_description', 'from_user_url', 'from_user_verified', 'filter_level' );
                 foreach ($fields as $f) {
                     $csv->addfield(isset($data[$f]) ? $data[$f] : ''); 
                 }

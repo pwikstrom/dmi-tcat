@@ -1,13 +1,14 @@
 <?php
-include_once("../config.php");
+include_once __DIR__ . '/../config.php';
+include_once __DIR__ . '/../common/constants.php';
 
 if (defined("ADMIN_USER") && ADMIN_USER != "" && (!isset($_SERVER['PHP_AUTH_USER']) || $_SERVER['PHP_AUTH_USER'] != ADMIN_USER))
     die("Go away, you evil hacker!");
 
-include_once("query_manager.php");
-include_once BASE_FILE . '/common/functions.php';
-include_once BASE_FILE . '/common/upgrade.php';
-include_once BASE_FILE . '/capture/common/functions.php';
+include_once __DIR__ . '/query_manager.php';
+include_once __DIR__ . '/../common/functions.php';
+include_once __DIR__ . '/../common/upgrade.php';
+include_once __DIR__ . '/../capture/common/functions.php';
 
 create_admin();
 create_error_logs();
@@ -36,6 +37,17 @@ $lastRateLimitHit = getLastRateLimitHit();
             th.toppad { font-size:14px; text-align:left; padding-top:20px; background-color:#fff; }
             td { background-color: #eee; padding:5px; }
             .keywords { width:400px; }
+
+            #if_fullpage { width:1000px; }
+
+            h1 { font-size:16px; margin:20px 0px 15px 0px; }
+
+            #if_title { float:left; }
+            #if_links { float:right; padding-top:22px; margin-right:-20px; }
+
+            .if_toplinks { display: inline-block; margin-left: 1em; font-size:12px; text-decoration:none; color: #000; }
+            .if_toplinks:before { content: "» "; }
+            .if_toplinks:hover { text-decoration:underline; }
 
             .if_row { padding:2px; position: relative; width: 1024px; clear: both;}
             .if_row_header{ width: 100px; height: 20px; float: left; padding-top: 5px;}
@@ -71,8 +83,17 @@ $lastRateLimitHit = getLastRateLimitHit();
     </head>
 
     <body>
+        <div id="if_fullpage">
+        <h1 id="if_title">DMI-TCAT query manager</h1>
+        <div id="if_links">
+            <a href="https://github.com/digitalmethodsinitiative/dmi-tcat" target="_blank" class="if_toplinks">github</a>
+            <a href="https://github.com/digitalmethodsinitiative/dmi-tcat/issues?state=open" target="_blank" class="if_toplinks">issues</a>
+            <a href="https://github.com/digitalmethodsinitiative/dmi-tcat/wiki" target="_blank" class="if_toplinks">FAQ</a>
+            <a href="../analysis/index.php" class="if_toplinks">analysis</a>
+        </div>
+        <div style="clear:both;"></div>
+        </div>
 
-        <h1>DMI-TCAT query manager</h1>
         <?php
         if (!dbserver_has_utf8mb4_support()) {
             print "<br /><font color='red'>Your MySQL version is too old, please upgrade to at least MySQL 5.5.3 to use DMI-TCAT.</font><br>";
@@ -105,20 +126,31 @@ $lastRateLimitHit = getLastRateLimitHit();
         }
         $git = getGitLocal();
         $showupdatemsg = false;
+        if (defined('AUTOUPDATE_ENABLED') && AUTOUPDATE_ENABLED == true && import_mysql_timezone_data() == false) {
+            if (!$showupdatemsg) {
+                print '<div id="updatewarning">';
+                print "You have configured TCAT to automatically upgrade in the background. However, a specific upgrade instruction requires MySQL root privileges and cannot be run by TCAT itself. You will need to install the MySQL Time Zone Support manually using instructions provided here:<br/><br/><a href=\"https://dev.mysql.com/doc/refman/5.5/en/time-zone-support.html\" target=_blank>https://dev.mysql.com/doc/refman/5.5/en/time-zone-support.html</a><br/><br/>For <i>Debian</i> or <i>Ubuntu Linux</i> systems, the following command, issued as root (use sudo su to become root), will install the neccessary time zone data.<br/></br>/usr/bin/mysql_tzinfo_to_sql /usr/share/zoneinfo | mysql --defaults-file=/etc/mysql/debian.cnf --force -u debian-sys-maint mysql</br>";
+            }
+            $showupdatemsg = true;
+        }
         if (is_array($git)) {
             $remote = getGitRemote($git['commit'], $git['branch']);
             if (is_array($remote)) {
-                if ($git['commit'] !== $remote['commit']) {
+                $date_unix = strtotime($remote['date']);
+                if ($git['commit'] !== $remote['commit'] && $date_unix < time() - 3600 * 24) {
                     $commit = '#' . substr($remote['commit'], 0, 7) . '...';
                     $mesg = $remote['mesg'];
                     $url = $remote['url'];
                     $required = $remote['required'];
-                    print '<div id="updatewarning">';
+                    $autoupgrade = 'autoupgrade()';
+                    if (!$showupdatemsg) {
+                        print '<div id="updatewarning">';
+                    }
                     $wikilink = 'https://github.com/digitalmethodsinitiative/dmi-tcat/wiki/Upgrading-TCAT';
                     if ($required) {
-                        print "A newer version of TCAT is available, containing important updates. You are strongly recommended to upgrade via git pull. Please read the <a href='$wikilink' target='_blank'>documentation</a> for details. [ commit <a href='$url' target='_blank'>$commit</a> - $mesg ]<br>";
+                        print "A newer version of TCAT is available, containing important updates. You are strongly recommended to upgrade. Please read the <a href='$wikilink' target='_blank'>documentation</a> for instructions on upgrading, or click <a href='#' onclick='$autoupgrade'>here</a> to schedule an automatic upgrade. [ commit <a href='$url' target='_blank'>$commit</a> - $mesg ]<br>";
                     } else {
-                        print "A newer version of TCAT is available. You can get the latest code via git pull. Please read the <a href='$wikilink' target='_blank'>documentation</a> for details. [ commit <a href='$url' target='_blank'>$commit</a> - $mesg ]<br>";
+                        print "A newer version of TCAT is available. You can get the latest code via git pull. Please read the <a href='$wikilink' target='_blank'>documentation</a> for instructions on upgrading, or click <a href='#' onclick='$autoupgrade'>here</a> to schedule an automatic upgrade. [ commit <a href='$url' target='_blank'>$commit</a> - $mesg ]<br>";
                     }
                     $showupdatemsg = true;
                 }
@@ -161,12 +193,13 @@ $lastRateLimitHit = getLastRateLimitHit();
                                         <option value="onepercent">one percent sample</option>
                         <?php } ?>
                                 </select>
+                                <span>(cannot be changed later on)</span>
                             </div>
                         </div>
                         <div class="if_row">
                             <div class='if_row_header'>Bin name:</div>
                             <div class='if_row_content'>
-                                <input id="newbin_name" name="newbin_name" type="text"/> (cannot be changed later on)
+                                <input id="newbin_name" name="newbin_name" type="text"/>
                             </div>
                         </div>
 <?php if (array_search('track', $captureroles) !== false) { ?>
@@ -297,6 +330,8 @@ $lastRateLimitHit = getLastRateLimitHit();
             }
             echo '</td>';
             echo '<td valign="top"><a href="" onclick="sendDelete(\'' . $bin->id . '\',\'' . $bin->active . '\',\'' . $bin->type . '\'); return false;">delete</a></td>';
+            echo '<td valign="top"><a href="" onclick="sendRename(\'' . $bin->id . '\',\'' . $bin->active . '\',\'' . $bin->type . '\'); return false;">rename</a></td>';
+            echo '</tr>';
             echo '</tr>';
         }
         echo '</tbody>';
@@ -557,11 +592,41 @@ foreach ($bins as $id => $bin)
         return false;
     }
 
+    function sendRename(_bin,_active,_type) {
+        
+        var _check = window.confirm("Are you sure that you want to rename this bin?");
+        
+        if(_check == true) {
+            
+            if(_active == 1) {
+                alert("The query bin is still running! You will need to stop it first.");
+                return false;
+            }
+
+            var _newname = window.prompt("Please enter the new name for your query bin.");
+
+            var _params = {action:"renamebin",bin:_bin,type:_type,active:_active,newname:_newname};
+
+            $.ajax({
+                dataType: "json",
+                url: "query_manager.php",
+                type: 'POST',
+                data: _params
+            }).done(function(_data) {
+                alert(_data["msg"]);
+                location.reload();
+            });   
+        }
+        return false;
+    }
+
+
     function sendNewForm() {
         var _type = $("#capture_type").val();
         if(!validateType(_type))
             return false;
         var _bin = $("#newbin_name").val();
+        _bin = _bin.replace(/ /g,"_");
         if(!validateBin(_bin))
             return false;
         var _comments = $("textarea[name=newbin_comments]").val();
@@ -781,6 +846,22 @@ foreach ($bins as $id => $bin)
                 $("#if_row_users").hide();
                 $("#if_row_phrases").hide();
                 break;
+        }
+    }
+
+    function autoupgrade() {
+        var _check = window.confirm("Your config.php file currently instructs us to upgrade everything with a complexity level up to '<?php if (defined('AUTOUPDATE_LEVEL')) { echo AUTOUPDATE_LEVEL; } else { echo 'trivial'; } ?>'. \nPlease confirm you would like to schedule an upgrade of TCAT.");
+        if (_check) {
+            var _params = {action:"autoupgrade"};
+            $.ajax({
+                dataType: "json",
+                url: "query_manager.php",
+                type: 'POST',
+                data: _params
+            }).done(function(_data) {
+                alert(_data["msg"]);
+                location.reload();
+            });   
         }
     }
 

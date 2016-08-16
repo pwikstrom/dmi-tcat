@@ -1,33 +1,11 @@
 <?php
-require_once './common/config.php';
-require_once './common/functions.php';
-require_once './common/CSV.class.php';
-?>
+require_once __DIR__ . '/common/config.php';
+require_once __DIR__ . '/common/functions.php';
+require_once __DIR__ . '/common/CSV.class.php';
 
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
-
-<html xmlns="http://www.w3.org/1999/xhtml">
-    <head>
-        <title>TCAT :: Export Tweets</title>
-
-        <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-
-        <link rel="stylesheet" href="css/main.css" type="text/css" />
-
-        <script type="text/javascript" language="javascript">
-
-
-
-        </script>
-
-    </head>
-
-    <body>
-
-        <h1>TCAT :: Export Tweets</h1>
-
-        <?php
         validate_all_variables();
+        dataset_must_exist();
+
         // make filename and open file for write
         $module = "fullExport";
         $exportSettings = array();
@@ -40,10 +18,12 @@ require_once './common/CSV.class.php';
         if ((isset($_GET['location']) && $_GET['location'] == 1))
             $module = "geoTweets";
         $filename = get_filename_for_export($module, implode("_", $exportSettings));
-        $csv = new CSV($filename, $outputformat);
+        $stream_to_open = export_start($filename, $outputformat);
+	
+        $csv = new CSV($stream_to_open, $outputformat);
 
         // write header
-        $header = "id,time,created_at,from_user_name,text,filter_level,possibly_sensitive,withheld_copyright,withheld_scope,truncated,retweet_count,favorite_count,lang,to_user_name,in_reply_to_status_id,source,location,lat,lng,from_user_id,from_user_realname,from_user_verified,from_user_description,from_user_url,from_user_profile_image_url,from_user_utcoffset,from_user_timezone,from_user_lang,from_user_tweetcount,from_user_followercount,from_user_friendcount,from_user_favourites_count,from_user_listed,from_user_withheld_scope,from_user_created_at";
+        $header = "id,time,created_at,from_user_name,text,filter_level,possibly_sensitive,withheld_copyright,withheld_scope,truncated,retweet_count,favorite_count,lang,to_user_name,in_reply_to_status_id,quoted_status_id,source,location,lat,lng,from_user_id,from_user_realname,from_user_verified,from_user_description,from_user_url,from_user_profile_image_url,from_user_utcoffset,from_user_timezone,from_user_lang,from_user_tweetcount,from_user_followercount,from_user_friendcount,from_user_favourites_count,from_user_listed,from_user_withheld_scope,from_user_created_at";
         if (array_search("urls", $exportSettings) !== false)
             $header .= ",urls,urls_expanded,urls_followed,domains,HTTP status code";
         if (array_search("media", $exportSettings) !== false) {
@@ -73,6 +53,7 @@ require_once './common/CSV.class.php';
             $sql .= " ORDER BY id";
 
         // loop over results and write to file
+        #print $sql."<br>";
         $sqlresults = mysql_query($sql);
         if ($sqlresults) {
             while ($data = mysql_fetch_assoc($sqlresults)) {
@@ -83,7 +64,7 @@ require_once './common/CSV.class.php';
                     $id = $data['id'];
                 $csv->addfield($id);
                 $csv->addfield(strtotime($data["created_at"]));
-                $fields = array ( 'created_at', 'from_user_name', 'text', 'filter_level', 'possibly_sensitive', 'withheld_copyright', 'withheld_scope', 'truncated', 'retweet_count', 'favorite_count', 'lang', 'to_user_name', 'in_reply_to_status_id', 'source', 'location', 'geo_lat', 'geo_lng', 'from_user_id', 'from_user_realname', 'from_user_verified', 'from_user_description', 'from_user_url', 'from_user_profile_image_url', 'from_user_utcoffset', 'from_user_timezone', 'from_user_lang', 'from_user_tweetcount', 'from_user_followercount', 'from_user_friendcount', 'from_user_favourites_count', 'from_user_listed', 'from_user_withheld_scope', 'from_user_created_at' );
+                $fields = array ( 'created_at', 'from_user_name', 'text', 'filter_level', 'possibly_sensitive', 'withheld_copyright', 'withheld_scope', 'truncated', 'retweet_count', 'favorite_count', 'lang', 'to_user_name', 'in_reply_to_status_id', 'quoted_status_id', 'source', 'location', 'geo_lat', 'geo_lng', 'from_user_id', 'from_user_realname', 'from_user_verified', 'from_user_description', 'from_user_url', 'from_user_profile_image_url', 'from_user_utcoffset', 'from_user_timezone', 'from_user_lang', 'from_user_tweetcount', 'from_user_followercount', 'from_user_friendcount', 'from_user_favourites_count', 'from_user_listed', 'from_user_withheld_scope', 'from_user_created_at' );
                 foreach ($fields as $f) {
                     $csv->addfield(isset($data[$f]) ? $data[$f] : ''); 
                 }
@@ -92,7 +73,8 @@ require_once './common/CSV.class.php';
                     $urls = $expanded = $followed = $domain = $error = $media = $media_ids = $media_urls = $media_type = $photo_width = $photo_height = $photo_resize = $indice_start = $indice_end = array();
                     // lookup urls
                     if (array_search("urls", $exportSettings) !== false) {
-                        $sql2 = "SELECT * FROM " . $esc['mysql']['dataset'] . "_urls WHERE tweet_id = " . $data['id'];
+                        $sql2 = "SELECT * FROM " . $esc['mysql']['dataset'] . "_urls WHERE tweet_id = " . $id;
+                        #print $sql2."<br>";
                         $rec2 = mysql_query($sql2);
                         if (mysql_num_rows($rec2) > 0) {
                             while ($res2 = mysql_fetch_assoc($rec2)) {
@@ -106,7 +88,7 @@ require_once './common/CSV.class.php';
                     }
                     // lookup media from media table
                     if (array_search("media", $exportSettings) !== false) {
-                        $sql3 = "SELECT * FROM " . $esc['mysql']['dataset'] . "_media WHERE tweet_id = " . $data['id'];
+                        $sql3 = "SELECT * FROM " . $esc['mysql']['dataset'] . "_media WHERE tweet_id = " . $id;
                         $rec3 = mysql_query($sql3);
                         if (mysql_num_rows($rec3) > 0) {
                             while ($res3 = mysql_fetch_assoc($rec3)) {
@@ -190,11 +172,40 @@ require_once './common/CSV.class.php';
         }
         $csv->close();
 
+    if (! $use_cache_file) {
+        exit(0);
+    }
+    // Rest of script is the HTML page with a link to the cached CSV/TSV file.
+?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+    <head>
+        <title>TCAT :: Export Tweets</title>
+
+        <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+
+        <link rel="stylesheet" href="css/main.css" type="text/css" />
+
+        <script type="text/javascript" language="javascript">
+
+        </script>
+
+    </head>
+
+    <body>
+
+        <h1>TCAT :: Export Tweets</h1>
+
+<?php
         echo '<fieldset class="if_parameters">';
         echo '<legend>Your File</legend>';
-        echo '<p><a href="' . filename_to_url($filename) . '">' . $filename . '</a></p>';
+	echo '<p>';
+        echo '<a href="' . htmlspecialchars(filename_to_url($filename)) . '">';
+	echo htmlspecialchars($filename);
+	echo '</a></p>';
         echo '</fieldset>';
-        ?>
+?>
 
     </body>
 </html>

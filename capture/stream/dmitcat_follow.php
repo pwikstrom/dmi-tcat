@@ -1,7 +1,11 @@
 <?php
 
+function env_is_cli() {
+    return (!isset($_SERVER['SERVER_SOFTWARE']) && (php_sapi_name() == 'cli' || (is_numeric($_SERVER['argc']) && $_SERVER['argc'] > 0)));
+}
+
 // ----- only run from command line -----
-if (php_sapi_name() !== 'cli' && php_sapi_name() !== 'cgi-fcgi')
+if (!env_is_cli())
     die;
 
 // ----- params -----
@@ -11,11 +15,12 @@ error_reporting(E_ALL);
 define('CAPTURE', 'follow');
 
 // ----- includes -----
-include "../../config.php";                  // load base config file
-include "../../common/functions.php";        // load base functions file
-include "../common/functions.php";           // load capture function file
+include __DIR__ . '/../../config.php';                  // load base config file
+include __DIR__ . '/../../common/constants.php';               // load constants file
+include __DIR__ . '/../../common/functions.php';        // load base functions file
+include __DIR__ . '/../common/functions.php';           // load capture function file
 
-require BASE_FILE . 'capture/common/tmhOAuth/tmhOAuth.php';
+require __DIR__ . '/../common/tmhOAuth/tmhOAuth.php';
 
 $thislockfp = script_lock(CAPTURE);
 if (!is_resource($thislockfp)) {

@@ -1,7 +1,7 @@
 <?php
-require_once './common/config.php';
-require_once './common/functions.php';
-require_once './common/CSV.class.php';
+require_once __DIR__ . '/common/config.php';
+require_once __DIR__ . '/common/functions.php';
+require_once __DIR__ . '/common/CSV.class.php';
 
 $lowercase = isset($_GET['lowercase']) ? $lowercase = $_GET['lowercase'] : 0;
 $minf = isset($_GET['minf']) ? $minf = $_GET['minf'] : 1;
@@ -39,7 +39,7 @@ $minf = isset($_GET['minf']) ? $minf = $_GET['minf'] : 1;
         $sql = "SELECT id, text FROM " . $esc['mysql']['dataset'] . "_tweets t ";
         $sql .= sqlSubset();
         
-        $sqlresults = mysql_query($sql);
+        $sqlresults = mysql_unbuffered_query($sql);
         $debug = '';
         if ($sqlresults) {
             while ($data = mysql_fetch_assoc($sqlresults)) {
@@ -55,6 +55,7 @@ $minf = isset($_GET['minf']) ? $minf = $_GET['minf'] : 1;
                     $csv->writerow();
                 }
             }
+            mysql_free_result($sqlresults);
         }
 
         $csv->close();

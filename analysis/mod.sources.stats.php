@@ -1,7 +1,7 @@
 <?php
-require_once './common/config.php';
-require_once './common/functions.php';
-require_once './common/CSV.class.php';
+require_once __DIR__ . '/common/config.php';
+require_once __DIR__ . '/common/functions.php';
+require_once __DIR__ . '/common/CSV.class.php';
 ?>
 
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
@@ -43,7 +43,7 @@ require_once './common/CSV.class.php';
         //print $sql . "<br>"; exit;
 
 
-        $sqlresults = mysql_query($sql);
+        $sqlresults = mysql_unbuffered_query($sql);
         $array = array();
         while ($res = mysql_fetch_assoc($sqlresults)) {
 
@@ -57,6 +57,7 @@ require_once './common/CSV.class.php';
 			}
             $array[$res['datepart']][$res['source']] += $res['count'];
         }
+        mysql_free_result($sqlresults);
 
         $csv->writeheader(array("date", "source", "count"));
 

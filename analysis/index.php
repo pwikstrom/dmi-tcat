@@ -1,9 +1,8 @@
 <?php
-require_once '../config.php';
-require_once 'common/config.php';
-require_once 'common/functions.php';
+require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/common/config.php';
+require_once __DIR__ . '/common/functions.php';
 ?>
-
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 
 <html xmlns="http://www.w3.org/1999/xhtml">
@@ -57,7 +56,26 @@ if (defined('ANALYSIS_URL'))
             "&graph_resolution=" + $("input[name=graph_resolution]:checked").val() +
             "&outputformat=" + outputformat;
 
-        document.location.href = _url;
+        /* verify server load */
+        $.ajax({
+            url: "ajax.serverload.php",
+            success: function(data){
+                    var load = parseInt(data.substr(0,1));
+                    var go = true
+                    if (load == 2) {
+                        alert('The load on the server is currently too high to continue. Please try again later.');
+                        go = false;
+                    } // else if (load == 1 && !confirm('The load on the server is currently above normal. Are you sure you wish to continue?')) {
+                      //  go = false;
+                      // }
+                    if (go) {
+                        document.location.href = _url;
+                    }
+                },
+            error: function(data){
+                    document.location.href = _url;
+                }
+            });
     }
     function saveSvg(id){
         $("svg").attr({ version: '1.1' , xmlns:"http://www.w3.org/2000/svg"});
@@ -137,12 +155,12 @@ if (defined('ANALYSIS_URL'))
             <h1 id="if_title">DMI Twitter Capturing and Analysis Toolset (DMI-TCAT)</h1>
 
             <div id="if_links">
-                &raquo; <a href="https://github.com/digitalmethodsinitiative/dmi-tcat" target="_blank" class="if_toplinks">github</a>&nbsp;&nbsp;&nbsp;
-                &raquo; <a href="https://github.com/digitalmethodsinitiative/dmi-tcat/issues?state=open" target="_blank" class="if_toplinks">issues</a>&nbsp;&nbsp;&nbsp;
-                &raquo; <a href="https://github.com/digitalmethodsinitiative/dmi-tcat/wiki" target="_blank" class="if_toplinks">FAQ</a>
+                <a href="https://github.com/digitalmethodsinitiative/dmi-tcat" target="_blank" class="if_toplinks">github</a>
+                <a href="https://github.com/digitalmethodsinitiative/dmi-tcat/issues?state=open" target="_blank" class="if_toplinks">issues</a>
+                <a href="https://github.com/digitalmethodsinitiative/dmi-tcat/wiki" target="_blank" class="if_toplinks">FAQ</a>
                 <?php
                 if (defined("ADMIN_USER") && ADMIN_USER != "" && isset($_SERVER['PHP_AUTH_USER']) && $_SERVER['PHP_AUTH_USER'] == ADMIN_USER)
-                    print '&nbsp;&nbsp;&nbsp; &raquo; <a href="../capture/index.php" target="_blank" class="if_toplinks">admin</a>';
+                    print '<a href="../capture/index.php" class="if_toplinks">admin</a>';
                 ?>
             </div>
 
@@ -233,14 +251,28 @@ if (defined('ANALYSIS_URL'))
                             </tr>
                         <?php } ?>
                         <tr>
-                            <td class="tbl_head">Startdate:</td><td><input type="text" id="ipt_startdate" size="60" name="startdate" value="<?php echo $startdate; ?>" /> (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)</td>
+                            <td class="tbl_head">Startdate (UTC):</td><td><input type="text" id="ipt_startdate" size="60" name="startdate" value="<?php echo $startdate; ?>" /> (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)</td>
                         </tr>
 
                         <tr>
-                            <td class="tbl_head">Enddate:</td><td><input type="text" id="ipt_enddate" size="60" name="enddate" value="<?php echo $enddate; ?>" /> (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)</td>
+                            <td class="tbl_head">Enddate (UTC):</td><td><input type="text" id="ipt_enddate" size="60" name="enddate" value="<?php echo $enddate; ?>" /> (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)</td>
                         </tr>
                         <tr>
-                            <td><input type="submit" value="update overview" /></td>
+                            <td valign="middle" style='padding-top: 4px'><input type="submit" value="update overview" /></td>
+                            <td valign="middle"><script type="text/javascript">
+                                function updatestatus() {
+                                    $.ajax({
+                                    url: "ajax.serverload.php",
+                                    success: function(data){
+                                            $('#loadstatus').html(data.substr(1));
+                                        }
+                                    });
+                                }
+                                updatestatus();
+                                setInterval(updatestatus, 3000);
+                                </script>
+                                <span id="loadstatus"></span>
+                            </td>
                         </tr>
                         <tr><td colspan='2'>*  You can also do AND <b>or</b> OR queries, although you cannot mix AND and OR in the same query.</td></tr>
                     </table>
@@ -294,6 +326,8 @@ if (defined('ANALYSIS_URL'))
                         $show_url_export = true;
                 }
             }
+            // see whether database is up-to-date to export ratelimit and gap tables
+            $show_ratelimit_and_gap_export = get_status('ratelimit_database_rebuild') == 2 ? true : false;
             // see whether the lang table exists
             $show_lang_export = FALSE;
             $sql = "SHOW TABLES LIKE '" . $esc['mysql']['dataset'] . "_lang'";
@@ -349,13 +383,14 @@ if (defined('ANALYSIS_URL'))
             $sql .= sqlSubset();
             $sql .= "GROUP BY datepart ORDER BY datepart";
 
-            $rec = mysql_query($sql);
+            $rec = mysql_unbuffered_query($sql);
             while ($res = mysql_fetch_assoc($rec)) {
                 $linedata[$res['datepart']]["tweets"] = $res['count'];
                 $linedata[$res['datepart']]["users"] = $res['usercount'];
                 $linedata[$res['datepart']]["locations"] = $res['loccount'];
                 $linedata[$res['datepart']]["geolocs"] = $res['geocount'];
             }
+            mysql_free_result($rec);	
 
             if (isset($_GET['query']) && $_GET["query"] != "") {
 
@@ -369,11 +404,12 @@ if (defined('ANALYSIS_URL'))
                 $sql .= "FROM " . $esc['mysql']['dataset'] . "_tweets t ";
                 $sql .= "WHERE t.created_at >= '" . $esc['datetime']['startdate'] . "' AND t.created_at <= '" . $esc['datetime']['enddate'] . "' ";
                 $sql .= "GROUP BY datepart ORDER BY datepart";
-                $rec = mysql_query($sql);
+                $rec = mysql_unbuffered_query($sql);
 
                 while ($res = mysql_fetch_assoc($rec)) {
                     $linedata[$res['datepart']]["full"] = $res['count'];
                 }
+            	mysql_free_result($rec);	
             }
             ?>
 
@@ -540,9 +576,9 @@ foreach ($linedata as $key => $value) {
                         <tr>
                             <td class="tbl_head">Graph resolution</td>
                             <td>
-                                <input type='radio' name='graph_resolution' value="day" <?php if ($graph_resolution == "day") echo "CHECKED"; ?>/> days
-                                <input type='radio' name='graph_resolution' value="hour" <?php if ($graph_resolution == "hour") echo "CHECKED"; ?>/> hours
-                                <input type='radio' name='graph_resolution' value="minute" <?php if ($graph_resolution == "minute") echo "CHECKED"; ?>/> minutes
+                                <input type='radio' name='graph_resolution' value="day" <?php if ($graph_resolution == "day") echo "CHECKED"; ?> id="grD"/> <label for="grD">days</label>
+                                <input type='radio' name='graph_resolution' value="hour" <?php if ($graph_resolution == "hour") echo "CHECKED"; ?> id="grH"/> <label for="grH">hours</label>
+                                <input type='radio' name='graph_resolution' value="minute" <?php if ($graph_resolution == "minute") echo "CHECKED"; ?> id="grM"/> <label for="grM">minutes</label>
                             </td>
                             <td><input type="submit" value="update graph" onclick="sendUrl('index.php');return false;" /></td>
                         </tr>
@@ -564,8 +600,8 @@ foreach ($linedata as $key => $value) {
                 <p>
                     <div class='txt_desc' style='background-color: #eee; padding: 5px;'>Output format for tables:
                         <form>
-                            <input type='radio' name="outputformat" value="csv"<?php if ($outputformat == 'csv') print " CHECKED"; ?>>CSV (comma-separated)</input>
-                            <input type='radio' name="outputformat" value="tsv"<?php if ($outputformat == 'tsv') print " CHECKED"; ?>>TSV (tab-separated)</input>
+                            <input type='radio' name="outputformat" value="csv"<?php if ($outputformat == 'csv') print " CHECKED"; ?> id="ofCSV"> <label for="ofCSV">CSV (comma-separated)</label>
+                            <input type='radio' name="outputformat" value="tsv"<?php if ($outputformat == 'tsv') print " CHECKED"; ?> id="ofTSV"> <label for="ofTSV">TSV (tab-separated)</label>
                         </form>
                     </div>
                 </p>
@@ -578,14 +614,14 @@ foreach ($linedata as $key => $value) {
 
                     <div class='txt_desc' style='background-color: #eee; padding: 5px;'>Here you can select how the statistics should be grouped:
                         <form>
-                            <input type='radio' name="interval" value="overall"<?php if ($interval == 'overall') print " CHECKED"; ?>>overall</input>
-                            <input type='radio' name="interval" value="hourly"<?php if ($interval == 'hourly') print " CHECKED"; ?>>per hour</input>
-                            <input type='radio' name="interval" value="daily"<?php if ($interval == 'daily') print " CHECKED"; ?>>per day</input>
-                            <input type='radio' name="interval" value="weekly"<?php if ($interval == 'weekly') print " CHECKED"; ?>>per week</input>
-                            <input type='radio' name="interval" value="monthly"<?php if ($interval == 'monthly') print " CHECKED"; ?>>per month</input>
-                            <input type='radio' name="interval" value="yearly"<?php if ($interval == 'yearly') print " CHECKED"; ?>>per year</input>
-                            <input type='radio' name="interval" value="custom"<?php if ($interval == 'custom') print " CHECKED"; ?>>custom:</input>
-                            <input type='text' name='customInterval' size='50' value='<?php if (!empty($intervalDates)) print $_REQUEST['customInterval']; else print "YYYY-MM-DD;YYYY-MM-DD;...;YYYY-MM-DD"; ?>'></input>
+                            <input type='radio' name="interval" value="overall"<?php if ($interval == 'overall') print " CHECKED"; ?> id="tsam1"> <label for="tsam1">overall</label>
+                            <input type='radio' name="interval" value="hourly"<?php if ($interval == 'hourly') print " CHECKED"; ?> id="tsam2"> <label for="tsam2">per hour</label>
+                            <input type='radio' name="interval" value="daily"<?php if ($interval == 'daily') print " CHECKED"; ?> id="tsam3"> <label for="tsam3">per day</label>
+                            <input type='radio' name="interval" value="weekly"<?php if ($interval == 'weekly') print " CHECKED"; ?> id="tsam4"> <label for="tsam4">per week</label>
+                            <input type='radio' name="interval" value="monthly"<?php if ($interval == 'monthly') print " CHECKED"; ?> id="tsam5"> <label for="tsam5">per month</label>
+                            <input type='radio' name="interval" value="yearly"<?php if ($interval == 'yearly') print " CHECKED"; ?> id="tsam6"> <label for="tsam6">per year</label>
+                            <input type='radio' name="interval" value="custom"<?php if ($interval == 'custom') print " CHECKED"; ?> id="tsam7"> <label for="tsam7">custom:</label>
+                            <input type='text' name='customInterval' size='50' value='<?php if (!empty($intervalDates)) print $_REQUEST['customInterval']; else print "YYYY-MM-DD;YYYY-MM-DD;...;YYYY-MM-DD"; ?>'/>
                         </form>
                     </div>
 
@@ -687,15 +723,30 @@ foreach ($linedata as $key => $value) {
                     <div class="txt_desc">Use: get a grasp of the most popular media.</div>
                     <div class="txt_link"> &raquo;  <a href="" onclick="var minf = askFrequency(); $('#whattodo').val('media_frequency&minf='+minf+getInterval());sendUrl('mod.media_frequency.php');return false;">launch</a></div>
 
+                    <?php if ($show_ratelimit_and_gap_export) { ?>
+                    <hr/>
+
+                    <h3>Export an estimation of the number of rate limited tweets in your data</h3>
+                    <div class="txt_desc">Exports a spreadsheet with an estimation of the ammount of non-captured tweets in your query due to ratelimit occurances.</div>
+                    <div class="txt_desc">Use: gain insight in possible missing data due to hitting the Twitter API rate limits.</div>
+                    <div class="txt_link"> &raquo; <a href="" onclick="$('#whattodo').val('ratelimits'+getInterval());sendUrl('mod.ratelimits.php');return false;">launch</a></div>
+
+                    <hr/>
+
+                    <h3>Export table with potential gaps in your data</h3>
+                    <div class="txt_desc">Exports a spreadsheet with all known data gaps in your current query, during which TCAT was not running or capturing data for this bin.</div>
+                    <div class="txt_desc">Use: Gain insight in possible missing data due to outages</div>
+                    <div class="txt_link"> &raquo; <a href="" onclick="$('#whattodo').val('gaps');sendUrl('mod.gaps.php');return false;">launch</a></div>
+
+                    <?php } ?>
 
                 </div>
-
 
                 <h2>Tweet exports</h2>
 
                 <div class="if_export_block">
 
-                    <div class="txt_desc">All tweet exports come as a .csv file which you can open in Excel or similar.</div>
+                    <div class="txt_desc">All tweet exports produces a .csv or .tsv file which you can open in Excel or similar.</div>
                     <div class='txt_desc' style='background-color: #eee; padding: 5px;'>Here you can select additional columns for the tweet exports (more = slower):
                         <form style='display:inline;'>
                             <?php
@@ -706,22 +757,22 @@ foreach ($linedata as $key => $value) {
                             <?php if ($show_url_export) { ?>
                                 <input type='checkbox' name="exportSettings" value="urls" <?php if (array_search("urls", $exportSettings) !== false) print "CHECKED"; ?>>URLs</input>
                             <?php } ?>
-                            <input type='checkbox' name="exportSettings" value="mentions" <?php if (array_search("mentions", $exportSettings) !== false) print "CHECKED"; ?>>mentions</input>
-                            <input type='checkbox' name="exportSettings" value="hashtags" <?php if (array_search("hashtags", $exportSettings) !== false) print "CHECKED"; ?>>hashtags</input>
-                            <input type='checkbox' name="exportSettings" value="media" <?php if (array_search("media", $exportSettings) !== false) print "CHECKED"; ?>>media</input>
+                            <input type='checkbox' name="exportSettings" value="mentions" <?php if (array_search("mentions", $exportSettings) !== false) print "CHECKED"; ?> id="esMentions"/> <label for="esMentions">mentions</label>
+                            <input type='checkbox' name="exportSettings" value="hashtags" <?php if (array_search("hashtags", $exportSettings) !== false) print "CHECKED"; ?> id="esHashtags"> <label for="esHashtags">hashtags</label>
+                            <input type='checkbox' name="exportSettings" value="media" <?php if (array_search("media", $exportSettings) !== false) print "CHECKED"; ?> id="esMedia"> <label for="esMedia">media</label>
                         </form>
                     </div>
 
                     <h3>Random set of tweets from selection</h3>
                     <div class="txt_desc">Contains 1000 randomly selected tweets and information about them (user, date created, ...).</div>
                     <div class="txt_desc">Use: a random subset of tweets is a representative sample that can be manually classified and coded much more easily than the full set.</div>
-                    <div class="txt_link"> &raquo;  <a href="" onclick="$('#whattodo').val('export_tweets&random=1'+getExportSettings());sendUrl('mod.export_tweets.php');return false;">launch</a></div>
+                    <div class="txt_link"> &raquo;  <a href="" onclick="$('#whattodo').val('export_tweets&random=1'+getExportSettings());sendUrl('mod.export_tweets.php');return false;">download</a></div>
                     <hr />
 
                     <h3>Export all tweets from selection</h3>
                     <div class="txt_desc">Contains all tweets and information about them (user, date created, ...).</div>
                     <div class="txt_desc">Use: spend time with your data.</div>
-                    <div class="txt_link"> &raquo;  <a href="" onclick="$('#whattodo').val('export_tweets'+getExportSettings());sendUrl('mod.export_tweets.php');return false;">export</a></div>
+                    <div class="txt_link"> &raquo;  <a href="" onclick="$('#whattodo').val('export_tweets'+getExportSettings());sendUrl('mod.export_tweets.php');return false;">download</a></div>
                     <hr />
 
                     <?php if ($show_lang_export) { ?>
@@ -739,35 +790,35 @@ foreach ($linedata as $key => $value) {
                     <div class="txt_desc">Lists all retweets (and all the tweets metadata like follower_count) chronologically.</div>
                     <div class="txt_desc">Use: reconstruct retweet chains.</div>
                     <div class="txt_desc"><b>Warning:</b> This script is slow. Small datasets only!</div>
-                    <div class="txt_link"> &raquo; <a href="" onclick="var minf = askRetweetFrequency(); $('#whattodo').val('retweets_chain&minf='+minf+getExportSettings());sendUrl('mod.retweets_chain.php');return false;">launch</a></div>
+                    <div class="txt_link"> &raquo; <a href="" onclick="var minf = askRetweetFrequency(); $('#whattodo').val('retweets_chain&minf='+minf+getExportSettings());sendUrl('mod.retweets_chain.php');return false;">download</a></div>
 
                     <hr />
 
                     <h3>Only tweets with lat/lon</h3>
                     <div class="txt_desc">Contains only geo-located tweets.</div>
                     <div class="txt_desc"></div>
-                    <div class="txt_link"> &raquo;  <a href="" onclick="$('#whattodo').val('export_tweets&location=1'+getExportSettings());sendUrl('mod.export_tweets.php');return false;">launch</a></div>
+                    <div class="txt_link"> &raquo;  <a href="" onclick="$('#whattodo').val('export_tweets&location=1'+getExportSettings());sendUrl('mod.export_tweets.php');return false;">download</a></div>
 
                     <hr />
 
                     <h3>Export tweet ids</h3>
                     <div class="txt_desc">Contains only the tweet ids from your selection.</div>
                     <div class="txt_desc"></div>
-                    <div class="txt_link"> &raquo;  <a href="" onclick="$('#whattodo').val('export_tweet_ids');sendUrl('mod.export_tweet_ids.php');return false;">launch</a></div>
+                    <div class="txt_link"> &raquo;  <a href="" onclick="$('#whattodo').val('export_tweet_ids');sendUrl('mod.export_tweet_ids.php');return false;">download</a></div>
 
                     <hr />
 
                     <h3>Export hashtag table (tweet id, hashtag)</h3>
                     <div class="txt_desc">Contains tweet ids from your selection and hashtags.</div>
                     <div class="txt_desc"></div>
-                    <div class="txt_link"> &raquo;  <a href="" onclick="$('#whattodo').val('export_hashtags');sendUrl('mod.export_hashtags.php');return false;">launch</a></div>
+                    <div class="txt_link"> &raquo;  <a href="" onclick="$('#whattodo').val('export_hashtags');sendUrl('mod.export_hashtags.php');return false;">download</a></div>
 
                     <hr />
 
                     <h3>Export mentions table (tweet id, user from id, user from name, user to id, user to name, mention, mention type)</h3>
                     <div class="txt_desc">Contains tweet ids from your selection, with mentions and the mention type.</div>
                     <div class="txt_desc"></div>
-                    <div class="txt_link"> &raquo;  <a href="" onclick="$('#whattodo').val('export_mentions');sendUrl('mod.export_mentions.php');return false;">launch</a></div>
+                    <div class="txt_link"> &raquo;  <a href="" onclick="$('#whattodo').val('export_mentions');sendUrl('mod.export_mentions.php');return false;">download</a></div>
 
                     <?php if ($show_url_export) { ?>
 
@@ -779,6 +830,8 @@ foreach ($linedata as $key => $value) {
                     <div class="txt_link"> &raquo;  <a href="" onclick="$('#whattodo').val('export_urls');sendUrl('mod.export_urls.php');return false;">launch</a></div>
 
                     <?php } ?>
+
+                    <hr/>
 
                 </div>
                 <h2>Networks</h2>

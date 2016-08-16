@@ -1,7 +1,7 @@
 <?php
-require_once './common/config.php';
-require_once './common/functions.php';
-require_once './common/CSV.class.php';
+require_once __DIR__ . '/common/config.php';
+require_once __DIR__ . '/common/functions.php';
+require_once __DIR__ . '/common/CSV.class.php';
 
 $minf = isset($_GET['minf']) ? $minf = $_GET['minf'] : 1;
 
@@ -43,7 +43,7 @@ $minf = isset($_GET['minf']) ? $minf = $_GET['minf'] : 1;
         $sql .= sqlSubset();
         $sql .= " AND m.tweet_id = t.id ";
         $sql .= " ORDER BY datepart ASC";
-        $sqlresults = mysql_query($sql);
+        $sqlresults = mysql_unbuffered_query($sql);
         $debug = '';
         if ($sqlresults) {
             while ($data = mysql_fetch_assoc($sqlresults)) {
@@ -58,6 +58,7 @@ $minf = isset($_GET['minf']) ? $minf = $_GET['minf'] : 1;
                     $media_url_count[$datepart][$url]++;
                 }
             }
+            mysql_free_result($sqlresults);
         }
 
         // write csv results

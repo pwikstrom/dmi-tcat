@@ -15,19 +15,19 @@ $hostname = "localhost";
  * Possible values are "track", "follow", "onepercent". 
  * Note that you can only do one of track, follow or onepercent per IP address and capturing key
  */
-define("CAPTUREROLES", serialize(array("track")));
+define('CAPTUREROLES', serialize(array('track')));
 
 /*
  * The user who can add and modify query bins. 
  * This user should exist in your htaccess authentication
  * Leave empty if you do not want to restrict access to the query manager - which, of course, is a security risk
  */
-define("ADMIN_USER", "admin");
+define('ADMIN_USER', 'admin');
 
 /*
  * *Super advanced and currently undocumented feature, leave settings as they are*
  * We have made it possible to tunnel Twitter API connections through other hosts (obtaining a different source IP address), and use multiple keysets for multiple streaming queries.
- * Each capture script should define its role, see define("CAPTUREROLES",serialize(array()))
+ * Each capture script should define its role, see define('CAPTUREROLES',serialize(array()))
  * Every distinct role should then get a different network path below
  * 
  */
@@ -43,12 +43,36 @@ $GLOBALS["HOSTROLE"] = array(
 $mail_to = "";
 
 /*
- * Twitter API keys
+ * Twitter API keys (basic configuration)
  */
 
-// Main keyring, used for capturing from streaming API
+// Please fill in your API credentials here
+
+$twitter_consumer_key = "";
+$twitter_consumer_secret = "";
+$twitter_user_token = "";
+$twitter_user_secret = "";
+
+// List of additional keys to loop over when there is a limited amount of requests per key, e.g. search
+// twitter_keys is an array of arrays listing different Twitter API keys
+$twitter_keys = array(
+    array("twitter_consumer_key" => $twitter_consumer_key,
+        "twitter_consumer_secret" => $twitter_consumer_secret,
+        "twitter_user_token" => $twitter_user_token,
+        "twitter_user_secret" => $twitter_user_secret,
+    )
+);
+
+/*
+ * Twitter API keys (expert configuration, with multiple roles and keys)
+ *
+ * Uncomment and edit code block below to activate.
+ */
+
+/**
+
 // Make sure you have a key for each capture role defined in CAPTUREROLES above
-if (!defined('CAPTURE') || !strcmp(CAPTURE, "track")) {
+if (!defined('CAPTURE') || !strcmp(CAPTURE, 'track')) {
     $twitter_consumer_key = "";
     $twitter_consumer_secret = "";
     $twitter_user_token = "";
@@ -65,25 +89,12 @@ if (!defined('CAPTURE') || !strcmp(CAPTURE, "track")) {
     $twitter_user_secret = "";
 }
 
-// List of additional keys to loop over when there is a limited amount of requests per key, e.g. search
-// twitter_keys is an array of arrays listing different Twitter API keys
-$twitter_keys = array(
-    array("twitter_consumer_key" => "",
-        "twitter_consumer_secret" => "",
-        "twitter_user_token" => "",
-        "twitter_user_secret" => "",
-    )
-);
+**/
 
 /*
  * Klout account info (optional)
  */
 $kloutapi_key = "";
-
-/*
- * file root in which dmi-tcat resides
- */
-define('BASE_FILE', '/var/www/dmi-tcat/');
 
 /*
  * URL root in which dmi-tcats resides
@@ -96,15 +107,25 @@ define('BASE_URL', 'http://example.com/dmi-tcat/');
 define('ANALYSIS_URL', BASE_URL . 'analysis/');
 
 /*
+ * Do you wish to enable fully automatic updates in the background? 
+ */
+define('AUTOUPDATE_ENABLED', false);
+
+/*
+ * Up to what complexity level do you wish to allow automatic upgrades (ie. in the background or at user request from inside the capture panel)?
+ *
+ * Since a lot of these updates maintain locks on the database, captures may be blocked until the upgrade has finished.
+ * You may want to select a higher complexity level ONLY if you have small datasets or do not mind a temporary interruption of service.
+ *
+ * Legal values are: trivial, substantial, expensive
+ */
+define('AUTOUPDATE_LEVEL', 'trivial');
+
+/*
  * When no database activity has occured for IDLETIME seconds during a track, the controller restarts the process. Do not set this too low,
  * as there is caching before we insert. Usually the default is fine.
  */
 define('IDLETIME', 600);
-
-/*
- * To avoid excessive verbosity, assume a minimal length of ratetime disturbance (heartbeat) in seconds
- */
-define('RATELIMIT_SILENCE', 300);
 
 /*
  * Report rate limit problems to the administrator every x hours ( 0 = no mail reporting )
@@ -114,7 +135,7 @@ define('RATELIMIT_MAIL_HOURS', 24);
 /*
  * Time zone
  */
-date_default_timezone_set("Europe/London");
+date_default_timezone_set('UTC'); // Warning: must be 'UTC'. Do not change!
 
 /*
  * Error reporting verbosity
@@ -131,6 +152,18 @@ ini_set("max_execution_time", 3600);
  */
 ini_set("memory_limit", "2G");
 
+/* Sysload monitoring. Display a traffic light indicating system load in the analysis panel */
+
+define('TCAT_SYSLOAD_CHECKING', false);
+
+/* If the sysload monitoring is enabled, a warning is issued when the sum processing time of all running tcat queries has reached the threshold below */
+
+define('TCAT_SYSLOAD_WARNING', 20);
+
+/* If the sysload monitoring is enabled, a blocking message is shown when the sum processing time of all running tcat queries has reached the threshold below */
+
+define('TCAT_SYSLOAD_MAXIMUM', 55);
+
 /*
  * Set encoding
  */
@@ -140,7 +173,7 @@ mb_internal_encoding("UTF-8");
  * set location of php
  * find the location by typing 'which php' on the command line of your terminal
  */
-define("PHP_CLI", "/usr/bin/php");
+define('PHP_CLI', '/usr/bin/php');
 
 /*
  * Use mysql INSERT DELAYED statements to insert data into the MySQL database.
@@ -159,9 +192,13 @@ define('USE_INSERT_DELAYED', false);
 define('DISABLE_INSERT_IGNORE', false);
 
 /*
- * This is the github API URL used to check whether your current DMI-TCAT install is up-to-date (assuming you are using git).
+ * This is the Git repository from which TCAT was installed from.
+ *
+ * If this is a GitHub HTTPS URL, it will be converted into a GitHub API URL
+ * to check whether the current install is up-to-date.
+ *
  * You will want to change this only when you have forked the repository.
  */
-define('REPOSITORY_URL', 'https://api.github.com/repos/digitalmethodsinitiative/dmi-tcat/commits');
+define('REPOSITORY_URL', 'https://github.com/digitalmethodsinitiative/dmi-tcat.git');
  
 ?>

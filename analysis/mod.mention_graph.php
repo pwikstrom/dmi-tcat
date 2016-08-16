@@ -1,6 +1,6 @@
 <?php
-require_once './common/config.php';
-require_once './common/functions.php';
+require_once __DIR__ . '/common/config.php';
+require_once __DIR__ . '/common/functions.php';
 ?>
 
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
@@ -105,11 +105,11 @@ require_once './common/functions.php';
             }
         }
 
-        $content .= "edgedef>node1 VARCHAR,node2 VARCHAR,weight DOUBLE\n";
+        $content .= "edgedef>node1 VARCHAR,node2 VARCHAR,weight DOUBLE,directed BOOLEAN\n";
         foreach ($edges as $key => $value) {
 			$tmp = explode(",", $key);
 			if(isset($topusers[$usersinv[$tmp[0]]]) && isset($topusers[$usersinv[$tmp[1]]])) {
-            	$content .= $key . "," . $value . "\n";
+            	$content .= $key . "," . $value . ",true\n";
 			}
         }
 

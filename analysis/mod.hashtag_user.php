@@ -1,7 +1,7 @@
 <?php
-require_once './common/config.php';
-require_once './common/functions.php';
-require_once './common/Gexf.class.php';
+require_once __DIR__ . '/common/config.php';
+require_once __DIR__ . '/common/functions.php';
+require_once __DIR__ . '/common/Gexf.class.php';
 ?>
 
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
@@ -25,7 +25,7 @@ require_once './common/Gexf.class.php';
 
         $filename = get_filename_for_export("hashtagUser", (isset($_GET['probabilityOfAssociation']) ? "_normalizedAssociationWeight" : ""), "gexf");
 
-        include_once('common/Coword.class.php');
+        include_once __DIR__ . '/common/Coword.class.php';
         $coword = new Coword;
         $coword->countWordOncePerDocument = FALSE;
 
@@ -38,7 +38,7 @@ require_once './common/Gexf.class.php';
         $sql .= "LENGTH(A.text)>1 AND ";
         $sql .= "A.tweet_id = t.id ";
 
-        $sqlresults = mysql_query($sql);
+        $sqlresults = mysql_unbuffered_query($sql);
         $languages = $locations = array();
         while ($res = mysql_fetch_assoc($sqlresults)) {
             if (!isset($userHashtags[$res['user']][$res['h1']]))
@@ -55,6 +55,7 @@ require_once './common/Gexf.class.php';
             $from_user_timezone[$res['user']] = $res['timezone'];
             $from_user_utcoffset[$res['user']] = $res['utcoffset'];
         }
+        mysql_free_result($sqlresults);
 
         $gexf = new Gexf();
         $gexf->setTitle("Hashtag - user " . $filename);

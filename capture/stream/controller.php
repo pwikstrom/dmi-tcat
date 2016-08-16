@@ -1,12 +1,17 @@
 <?php
 
+function env_is_cli() {
+    return (!isset($_SERVER['SERVER_SOFTWARE']) && (php_sapi_name() == 'cli' || (is_numeric($_SERVER['argc']) && $_SERVER['argc'] > 0)));
+}
+
 // ----- only run from command line -----
-if (php_sapi_name() !== 'cli' && php_sapi_name() !== 'cgi-fcgi')
+if (!env_is_cli())
     die;
 
-include_once("../../config.php");
-include "../../common/functions.php";
-include "../common/functions.php";
+include_once __DIR__ . '/../../config.php';
+include_once __DIR__ . '/../../common/constants.php';
+include __DIR__ . '/../../common/functions.php';
+include __DIR__ . '/../common/functions.php';
 
 // make sure only one controller script is running
 $thislockfp = script_lock('controller');
@@ -21,10 +26,18 @@ if (dbserver_has_utf8mb4_support() == false) {
 }
 
 $dbh = pdo_connect();
-
 $roles = unserialize(CAPTUREROLES);
 
+// We need the tcat_status table
+   
+create_error_logs();
+
+// We need the tcat_captured_phrases table
+
+create_admin();
+
 // first gather all instructions sent by the webinterface to the controller (ie. the instruction queue)
+$upgrade_requested = false;
 $commands = array();
 foreach ($roles as $role) {
     $commands[$role] = array();
@@ -38,11 +51,20 @@ $rec = $dbh->prepare("SHOW TABLES LIKE 'tcat_controller_tasklist'");
 if ($rec->execute() && $rec->rowCount() > 0) {
     $sql = "select task, instruction from tcat_controller_tasklist order by id asc lock in share mode";
     foreach ($dbh->query($sql) as $row) {
-        if ($geoActive && $row['task'] = 'geotrack') $row['task'] = 'track';
-        if (!array_key_exists($row['task'], $commands)) {
-            continue;
+        // first handle special tcat-wide instructions
+        if ($row['task'] == 'tcat') {
+            if ($row['instruction'] == 'upgrade') {
+                $upgrade_requested = true;
+                logit("controller.log", "running auto-update at user request");
+            }
+        } else {
+            // then handle instructions per captrue role
+            if ($geoActive && $row['task'] = 'geotrack') $row['task'] = 'track';
+            if (!array_key_exists($row['task'], $commands)) {
+                continue;
+            }
+            $commands[$row['task']][] = $row;
         }
-        $commands[$row['task']][] = $row;
     }
 
     // do not leave any unknown tasks linger
@@ -51,7 +73,83 @@ if ($rec->execute() && $rec->rowCount() > 0) {
     $res = $h->execute();
 }
 
-// now check for each role what needs to be done
+if (!defined('AUTOUPDATE_ENABLED')) {
+    define('AUTOUPDATE_ENABLED', false);
+}
+if (!defined('AUTOUPDATE_LEVEL')) {
+    define('AUTOUPDATE_LEVEL', 'trivial');
+}
+if (AUTOUPDATE_ENABLED && $upgrade_requested == false) {
+    $failure = false;
+    // we will wait at least one day before pulling new code
+    $git = getGitLocal();
+    if (is_array($git)) {
+        $remote = getGitRemote($git['commit'], $git['branch']);
+        if (is_array($remote)) {
+            $date_unix = strtotime($remote['date']);
+            if ($git['commit'] == $remote['commit'] || $date_unix > time() - 3600 * 24) {
+                logit("controller.log", "not yet executing auto-update, because the last commit is less than a day old");
+                $failure = true;
+            }
+        } else {
+            logit("controller.log", "auto-update not supported, because we cannot get the remote git information");
+            $failure = true;
+        }
+    } else {
+        logit("controller.log", "auto-update not supported, because we cannot get the local git information");
+        $failure = true;
+    }
+    if ($failure == false) {
+        // additionally we want to ensure only a single auto-update attempt is made per day
+        $nomodifyfile = __DIR__ . '/../../nomodify.txt';
+        if (!file_exists($nomodifyfile)) {
+            // the nomodify file does not seem to exist
+            logit("controller.log", "auto-update not supported, because the nomodify.txt file appears to be missing");
+            $failure = true;
+        }
+    }
+    if ($failure == false) {
+        $modified = filectime($nomodifyfile);
+        $minute_number_modified = date('i', $modified);
+        $minute_number_now = date('i', time());
+        $hour_number_modified = date('G', $modified);
+        $hour_number_now = date('G', time());
+        if ($hour_number_now == $hour_number_modified && $minute_number_now == $minute_number_modified) {
+            $upgrade_requested = true;
+        } else {
+            $upgrade_requested = false;
+        }
+    }
+}
+if ($upgrade_requested) {
+    // git pull
+    if (!is_writable(__DIR__ . '/../../capture')) {
+        logit("controller.log", "auto-update requested, but the cron user does not have the neccessary permissions to do a successful git pull");
+        $skipupdate = true;
+    } else {
+        logit("controller.log", "now attempting auto-update with: git pull");
+        chdir(__DIR__ . '/../..');
+        system("git pull 2>&1 >/dev/null", $status);
+        if ($status !== 0) {
+            logit("controller.log", "auto-update was not successful. The command 'git pull' seems to have failed. Did you make any local TCAT modifications? Please investigate manually.");
+            $skipupdate = true;
+        }
+    }
+    // run upgrade.php
+    logit("controller.log", "now attempting database auto-update by running: php upgrade.php");
+    chdir(__DIR__ . '/../../common');
+    $flag = '--au0';
+    if (AUTOUPDATE_LEVEL == 'substantial') {
+        $flag = '--au1';
+    } elseif (AUTOUPDATE_LEVEL == 'expensive') {
+        $flag = '--au2';
+    }
+    system("nohup php upgrade.php --non-interactive $flag", $status);
+}
+
+chdir(__DIR__);
+
+// now check for each capture role what needs to be done
 foreach ($roles as $role) {
 
     $reload = false;
@@ -78,9 +176,9 @@ foreach ($roles as $role) {
     $pid = 0;
     $last = 0;
     $running = false;
-    if (file_exists(BASE_FILE . "proc/$role.procinfo")) {
+    if (file_exists(__DIR__ . "/../../proc/$role.procinfo")) {
 
-        $procfile = read_procfile(BASE_FILE . "proc/$role.procinfo");
+        $procfile = read_procfile(__DIR__ . "/../../proc/$role.procinfo");
         $pid = $procfile['pid'];
         $last = $procfile['last'];
 	    if ($pid == -1) exit();
@@ -95,8 +193,12 @@ foreach ($roles as $role) {
 
         if ($reload || $idled) {
 
-            // record confirmed gap
-            gap_record($role, $last, time());
+            // record confirmed gap if we could measure it
+            if ($last && gap_record($role, $last, time())) {
+                logit("controller.log", "recording a data gap for script $role from '" . toDateTime($last) . "' to '" . toDateTime(time()) . "'");
+            } else {
+                logit("controller.log", "we have no information about previous running time of script $role - cannot record a gap");
+            }
 
             if ($running) {
 
@@ -147,14 +249,14 @@ foreach ($roles as $role) {
 
                 // notify user via email when we restart an idle script
                 if (!$reload && $idled && isset($mail_to) && trim($mail_to) != "")
-                    mail($mail_to, "DMI-TCAT controller killed a process", $restartmsg);
+                    mail($mail_to, "DMI-TCAT controller killed a process (server: " . getHostName() . ")" , $restartmsg, 'From: no-reply@dmitcat');
 
                 if (script_lock($role, true) === true) {
                     // restart script
 
                     // a forked process may inherit our lock, but we prevent this.
                     flock($thislockfp, LOCK_UN); fclose($thislockfp);
-                    passthru(PHP_CLI . " " . BASE_FILE . "capture/stream/dmitcat_$role.php > /dev/null 2>&1 &");
+                    passthru(PHP_CLI . " " . __DIR__ . "/dmitcat_$role.php > /dev/null 2>&1 &");
                     $thislockfp = script_lock('controller');
                 }
             }
@@ -166,13 +268,15 @@ foreach ($roles as $role) {
             logit("controller.log", "script $role was not running - starting");
 
             // record confirmed gap if we could measure it
-            if ($last) {
-                gap_record($role, $last, time());
+            if ($last && gap_record($role, $last, time())) {
+                logit("controller.log", "recording a data gap for script $role from '" . toDateTime($last) . "' to '" . toDateTime(time()) . "'");
+            } else {
+                logit("controller.log", "we have no information about previous running time of script $role - cannot record a gap");
             }
 
             // a forked process may inherit our lock, but we prevent this.
             flock($thislockfp, LOCK_UN); fclose($thislockfp);
-            passthru(PHP_CLI . " " . BASE_FILE . "capture/stream/dmitcat_$role.php > /dev/null 2>&1 &");
+            passthru(PHP_CLI . " " . __DIR__ . "/dmitcat_$role.php > /dev/null 2>&1 &");
             $thislockfp = script_lock('controller');
         }
     }

@@ -5,11 +5,12 @@ if ($argc < 1)
 // ----- params -----
 set_time_limit(0);
 error_reporting(E_ALL);
-include_once "../../config.php";
-include_once BASE_FILE . '/common/functions.php';
-include_once BASE_FILE . '/capture/common/functions.php';
+include_once __DIR__ . '/../../config.php';
+include_once __DIR__ . '/../../common/constants.php';
+include_once __DIR__ . '/../../common/functions.php';
+include_once __DIR__ . '/../../capture/common/functions.php';
 
-require BASE_FILE . 'capture/common/tmhOAuth/tmhOAuth.php';
+require __DIR__ . '/../../capture/common/tmhOAuth/tmhOAuth.php';
 
 // make sure only one search script is running
 $thislockfp = script_lock('search');
@@ -46,12 +47,12 @@ create_bin($bin_name, $dbh);
 
 $ratefree = 0;
 
+queryManagerCreateBinFromExistingTables($bin_name, $querybin_id, $type, explode("OR", $keywords));
+
 search($keywords);
 if ($tweetQueue->length() > 0) {
     $tweetQueue->insertDB();
 }
-
-queryManagerCreateBinFromExistingTables($bin_name, $querybin_id, $type, explode("OR", $keywords));
 
 function search($keywords, $max_id = null) {
     global $twitter_keys, $current_key, $ratefree, $bin_name, $dbh, $tweetQueue;

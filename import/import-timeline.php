@@ -1,8 +1,9 @@
 <?php
 if($argc<1) die; // only run from command line
-include_once('../config.php');
-include_once('../common/functions.php');
-include_once('../capture/common/functions.php');
+include_once __DIR__ . '/../config.php';
+include_once __DIR__ . '/../common/constants.php';
+include_once __DIR__ . '/../common/functions.php';
+include_once __DIR__ . '/../capture/common/functions.php';
 
 // specify the name of the bin here 
 $bin_name = '';
@@ -19,6 +20,7 @@ $querybin_id = queryManagerBinExists($bin_name);
 
 $dbh = pdo_connect();
 create_bin($bin_name, $dbh);
+queryManagerCreateBinFromExistingTables($bin_name, $querybin_id, 'import timeline');
 
 $all_files = glob("$dir/*.json");
 
@@ -36,8 +38,6 @@ for ($i = 0; $i < $count; ++$i) {
     process_json_file_timeline($filepath, $dbh);
     print $c-- . "\n";
 }
-
-queryManagerCreateBinFromExistingTables($bin_name, $querybin_id, 'import timeline');
 
 function process_json_file_timeline($filepath, $dbh) {
     global $tweets_processed, $tweets_failed, $tweets_success,

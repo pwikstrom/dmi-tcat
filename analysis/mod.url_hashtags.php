@@ -1,8 +1,8 @@
 <?php
-require_once './common/config.php';
-require_once './common/functions.php';
-require_once './common/Gexf.class.php';
-require_once './common/CSV.class.php';
+require_once __DIR__ . '/common/config.php';
+require_once __DIR__ . '/common/functions.php';
+require_once __DIR__ . '/common/Gexf.class.php';
+require_once __DIR__ . '/common/CSV.class.php';
 ?>
 
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
@@ -40,7 +40,7 @@ require_once './common/CSV.class.php';
         $sql .= " GROUP BY u.url_followed, LOWER(h.text COLLATE $collation) ORDER BY frequency DESC";
         //print $sql." - <br>";
 
-        $sqlresults = mysql_query($sql);
+        $sqlresults = mysql_unbuffered_query($sql);
 
         $csv->writeheader(array("frequency", "hashtag", "url", "domain", "status_code"));
         while ($res = mysql_fetch_assoc($sqlresults)) {
@@ -55,6 +55,9 @@ require_once './common/CSV.class.php';
             $urlDomain[$res['url']] = $res['domain'];
             $urlStatusCode[$res['url']] = $res['status_code'];
         }
+
+        mysql_free_result($sqlresults);
+
         $csv->close();
 
         echo '<fieldset class="if_parameters">';

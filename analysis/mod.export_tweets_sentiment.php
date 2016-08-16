@@ -1,7 +1,7 @@
 <?php
-require_once './common/config.php';
-require_once './common/functions.php';
-require_once './common/CSV.class.php';
+require_once __DIR__ . '/common/config.php';
+require_once __DIR__ . '/common/functions.php';
+require_once __DIR__ . '/common/CSV.class.php';
 ?>
 
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
@@ -39,17 +39,18 @@ require_once './common/CSV.class.php';
 
         $sql = "SELECT s.positive, s.negative, s.explanation, t.from_user_name as user, t.id as tid FROM " . $esc['mysql']['dataset'] . "_sentiment s, " . $esc['mysql']['dataset'] . "_tweets t ";
         $sql .= sqlSubset("t.id = s.tweet_id AND ");
-        $rec = mysql_query($sql);
+        $rec = mysql_unbuffered_query($sql);
         while ($res = mysql_fetch_assoc($rec)) {
             $sentiment[$res['tid']]['pos'] = $res['positive'];
             $sentiment[$res['tid']]['neg'] = $res['negative'];
             $sentiment[$res['tid']]['desc'] = $res['explanation'];
         }
+        mysql_free_result($rec);
 
         $sql = "SELECT * FROM " . $esc['mysql']['dataset'] . "_tweets t ";
         $sql .= sqlSubset();
 
-        $sqlresults = mysql_query($sql);
+        $sqlresults = mysql_unbuffered_query($sql);
         if ($sqlresults) {
             while ($data = mysql_fetch_assoc($sqlresults)) {
                 $csv->newrow();
@@ -68,6 +69,7 @@ require_once './common/CSV.class.php';
                 }
                 $csv->writerow();
             }
+            mysql_free_result($sqlresults);
         }
 
         $csv->close();

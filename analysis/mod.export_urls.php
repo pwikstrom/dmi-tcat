@@ -1,7 +1,7 @@
 <?php
-require_once './common/config.php';
-require_once './common/functions.php';
-require_once './common/CSV.class.php';
+require_once __DIR__ . '/common/config.php';
+require_once __DIR__ . '/common/functions.php';
+require_once __DIR__ . '/common/CSV.class.php';
 ?>
 
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
@@ -37,7 +37,7 @@ require_once './common/CSV.class.php';
         $sql = "SELECT t.id as id, u.url as url, u.url_expanded as url_expanded, u.url_followed as url_followed FROM " . $esc['mysql']['dataset'] . "_tweets t, " . $esc['mysql']['dataset'] . "_urls u ";
         $sql .= sqlSubset();
         $sql .= " AND u.tweet_id = t.id ORDER BY id";
-        $sqlresults = mysql_query($sql);
+        $sqlresults = mysql_unbuffered_query($sql);
         $out = "";
         if ($sqlresults) {
             while ($data = mysql_fetch_assoc($sqlresults)) {
@@ -56,6 +56,7 @@ require_once './common/CSV.class.php';
                 }
                 $csv->writerow();
             }
+            mysql_free_result($sqlresults);
         }
 
         $csv->close();
